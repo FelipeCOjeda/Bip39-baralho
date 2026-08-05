@@ -50,6 +50,16 @@ button.secondary:hover { background: #484f58; }
 .card-result { margin-top: 8px; padding: 8px; background: #1c2128; border-radius: 4px; font-size: 0.9em; }
 .card-result.discard { color: #d29922; }
 .card-result.valid-card { color: #3fb950; }
+.chip { background: #238636; color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; display: inline-flex; align-items: center; gap: 6px; }
+.chip .num { background: rgba(0,0,0,0.3); border-radius: 8px; padding: 1px 6px; font-size: 0.8em; }
+.chip .remove { cursor: pointer; opacity: 0.7; font-size: 1.1em; }
+.chip .remove:hover { opacity: 1; }
+.chip.empty { background: #21262d; border: 1px dashed #30363d; color: #484f58; }
+.add-word-btn { background: #1f6feb; margin-top: 0; padding: 6px 14px; font-size: 0.85em; }
+.add-word-btn:hover { background: #388bfd; }
+.add-word-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+.go-finalize { background: #8957e5; margin-top: 8px; }
+.go-finalize:hover { background: #a371f7; }
 table { width: 100%; border-collapse: collapse; margin: 8px 0; }
 th, td { padding: 6px 8px; text-align: left; border: 1px solid #30363d; font-size: 0.85em; }
 th { background: #21262d; color: #58a6ff; }
@@ -73,15 +83,27 @@ th { background: #21262d; color: #58a6ff; }
 <div id="tab-consulta">
 <div class="section">
 <h2>Consulta de Cartas</h2>
-<p class="info" style="margin-bottom:12px">Selecione duas cartas para descobrir a palavra BIP39 correspondente.</p>
+<p class="info" style="margin-bottom:12px">Selecione duas cartas para descobrir a palavra BIP39 correspondente. Marque cada resultado como palavra da sua seed.</p>
 <div class="row">
 <div><label>Idioma</label><select id="lang1" onchange="doLookup()"></select></div>
+<div><label>Tamanho da seed</label>
+<select id="seedSize" onchange="resetCollected()">
+<option value="12">12 palavras</option>
+<option value="18">18 palavras</option>
+<option value="24">24 palavras</option>
+</select></div>
 </div>
 <div class="row">
 <div><label>Carta 1</label><select id="card1" onchange="doLookup()"><option value="">—</option></select></div>
 <div><label>Carta 2</label><select id="card2" onchange="doLookup()"><option value="">—</option></select></div>
 </div>
 <div id="lookup-result"></div>
+</div>
+
+<div class="section">
+<h2>Palavras coletadas <span id="collected-count" style="font-size:0.8em;color:#8b949e">(0/11)</span></h2>
+<div id="collected-words" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+<div id="collected-actions"></div>
 </div>
 </div>
 
@@ -192,6 +214,9 @@ const CARDS = ["A de Paus ♣", "2 de Paus ♣", "3 de Paus ♣", "4 de Paus ♣
 
 let WORDLISTS = {};
 let currentTab = 'consulta';
+let collectedWords = [];
+let lastLookupWord = null;
+let lastLookupN = null;
 
 // Decompress wordlists on load
 async function initWordlists() {
@@ -217,6 +242,7 @@ async function initWordlists() {
     WORDLISTS = JSON.parse(text);
     populateSelects();
     updateWordInputs();
+    renderCollected();
 }
 
 function populateSelects() {
@@ -269,17 +295,100 @@ function doLookup() {
     const b = document.getElementById('card2').value;
     const lang = document.getElementById('lang1').value;
     const div = document.getElementById('lookup-result');
+    lastLookupWord = null; lastLookupN = null;
     if (a === '' || b === '') { div.innerHTML = ''; return; }
     const ai = parseInt(a), bi = parseInt(b);
     if (ai === bi) { div.innerHTML = '<div class="card-result discard">Cartas iguais — escolha cartas diferentes.</div>'; return; }
     const r = cardLookup(ai, bi, lang);
+    const seedSize = parseInt(document.getElementById('seedSize').value);
+    const maxFree = seedSize - 1;
+    const isFull = collectedWords.length >= maxFree;
     if (r.valid) {
+        lastLookupWord = r.word; lastLookupN = r.n;
+        const addBtn = isFull
+            ? '<button class="add-word-btn" disabled>Todas as ' + maxFree + ' palavras j&aacute; coletadas</button>'
+            : '<button class="add-word-btn" onclick="addCollectedWord()">+ Marcar como palavra ' + (collectedWords.length + 1) + '</button>';
         div.innerHTML = '<div class="card-result valid-card">' +
             '<strong>N = ' + r.n + '</strong> — Palavra: <strong style="font-size:1.2em">' + r.word + '</strong>' +
-            '<br><span style="color:#8b949e">11 bits: ' + r.n.toString(2).padStart(11,'0') + '</span></div>';
+            '<br><span style="color:#8b949e">11 bits: ' + r.n.toString(2).padStart(11,'0') + '</span><br>' +
+            addBtn + '</div>';
     } else {
         div.innerHTML = '<div class="card-result discard"><strong>N = ' + r.n + '</strong> — DESCARTAR<br>Devolva as cartas, embaralhe e repita.</div>';
     }
+}
+
+function addCollectedWord() {
+    if (!lastLookupWord) return;
+    const seedSize = parseInt(document.getElementById('seedSize').value);
+    const maxFree = seedSize - 1;
+    if (collectedWords.length >= maxFree) return;
+    collectedWords.push(lastLookupWord);
+    lastLookupWord = null; lastLookupN = null;
+    document.getElementById('card1').value = '';
+    document.getElementById('card2').value = '';
+    document.getElementById('lookup-result').innerHTML = '';
+    renderCollected();
+}
+
+function removeCollectedWord(idx) {
+    collectedWords.splice(idx, 1);
+    renderCollected();
+}
+
+function resetCollected() {
+    collectedWords = [];
+    renderCollected();
+}
+
+function renderCollected() {
+    const seedSize = parseInt(document.getElementById('seedSize').value);
+    const maxFree = seedSize - 1;
+    const container = document.getElementById('collected-words');
+    const countEl = document.getElementById('collected-count');
+    const actionsEl = document.getElementById('collected-actions');
+    countEl.textContent = '(' + collectedWords.length + '/' + maxFree + ')';
+
+    let html = '';
+    for (let i = 0; i < maxFree; i++) {
+        if (i < collectedWords.length) {
+            html += '<span class="chip"><span class="num">' + (i+1) + '</span>' +
+                collectedWords[i] +
+                '<span class="remove" onclick="removeCollectedWord(' + i + ')">&times;</span></span>';
+        } else {
+            html += '<span class="chip empty"><span class="num">' + (i+1) + '</span>—</span>';
+        }
+    }
+    container.innerHTML = html;
+
+    if (collectedWords.length === maxFree) {
+        actionsEl.innerHTML = '<button class="go-finalize" onclick="sendToFinalize()">Ir para Finalizar Seed &rarr;</button>' +
+            '<button class="secondary" style="margin-left:8px" onclick="resetCollected()">Limpar</button>';
+    } else if (collectedWords.length > 0) {
+        actionsEl.innerHTML = '<button class="secondary" onclick="resetCollected()">Limpar</button>';
+    } else {
+        actionsEl.innerHTML = '';
+    }
+}
+
+function sendToFinalize() {
+    const seedSize = parseInt(document.getElementById('seedSize').value);
+    const lang = document.getElementById('lang1').value;
+    // Set finalizar tab config
+    document.getElementById('totalWords').value = seedSize;
+    document.getElementById('lang2').value = lang;
+    updateWordInputs();
+    // Fill words
+    const maxFree = seedSize - 1;
+    for (let i = 0; i < maxFree; i++) {
+        const input = document.getElementById('word' + (i+1));
+        if (input && i < collectedWords.length) {
+            input.value = collectedWords[i];
+            input.classList.add('valid');
+            input.classList.remove('invalid');
+        }
+    }
+    showTab('finalizar');
+    calcChecksum();
 }
 
 function doExtraLookup() {

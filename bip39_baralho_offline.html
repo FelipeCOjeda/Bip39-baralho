@@ -60,6 +60,18 @@ button.secondary:hover { background: #484f58; }
 .add-word-btn:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
 .go-finalize { background: #8957e5; margin-top: 8px; }
 .go-finalize:hover { background: #a371f7; }
+.entropy-panel { background: #1c2128; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+.entropy-panel h3 { color: #58a6ff; font-size: 0.95em; margin-bottom: 10px; }
+.entropy-bar { background: #21262d; border-radius: 4px; height: 20px; overflow: hidden; position: relative; margin-bottom: 8px; }
+.entropy-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease, background 0.4s ease; }
+.entropy-bar-text { position: absolute; top: 0; left: 0; right: 0; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.75em; font-weight: bold; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+.entropy-stats { display: flex; gap: 16px; flex-wrap: wrap; }
+.entropy-stat { }
+.entropy-stat .stat-label { color: #8b949e; font-size: 0.75em; }
+.entropy-stat .stat-value { color: #e6edf3; font-size: 1em; font-weight: bold; }
+.entropy-stat .stat-value.good { color: #3fb950; }
+.entropy-stat .stat-value.partial { color: #d29922; }
+.entropy-stat .stat-value.low { color: #f85149; }
 table { width: 100%; border-collapse: collapse; margin: 8px 0; }
 th, td { padding: 6px 8px; text-align: left; border: 1px solid #30363d; font-size: 0.85em; }
 th { background: #21262d; color: #58a6ff; }
@@ -103,6 +115,7 @@ th { background: #21262d; color: #58a6ff; }
 <div class="section">
 <h2>Palavras coletadas <span id="collected-count" style="font-size:0.8em;color:#8b949e">(0/11)</span></h2>
 <div id="collected-words" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+<div id="entropy-consulta" class="entropy-panel"></div>
 <div id="collected-actions"></div>
 </div>
 </div>
@@ -141,6 +154,8 @@ th { background: #21262d; color: #58a6ff; }
 <label>&Iacute;ndice N da consulta extra (0-2047)</label>
 <input type="number" id="extraIndex" min="0" max="2047" placeholder="Resultado da consulta acima" onchange="calcChecksum()">
 </div>
+
+<div id="entropy-finalizar" class="entropy-panel section"></div>
 
 <div class="section">
 <h2>Resultado</h2>
@@ -360,6 +375,9 @@ function renderCollected() {
     }
     container.innerHTML = html;
 
+    // Entropy panel
+    renderEntropy('entropy-consulta', collectedWords.length, seedSize, false);
+
     if (collectedWords.length === maxFree) {
         actionsEl.innerHTML = '<button class="go-finalize" onclick="sendToFinalize()">Ir para Finalizar Seed &rarr;</button>' +
             '<button class="secondary" style="margin-left:8px" onclick="resetCollected()">Limpar</button>';
@@ -368,6 +386,48 @@ function renderCollected() {
     } else {
         actionsEl.innerHTML = '';
     }
+}
+
+function renderEntropy(targetId, wordsCollected, totalWords, hasExtra) {
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const config = {12: [128,4,7], 18: [192,6,5], 24: [256,8,3]};
+    const [entBits, csBits, rBits] = config[totalWords];
+    const maxFree = totalWords - 1;
+    // Each word contributes 11 bits of entropy from the card draw
+    const bitsFromWords = wordsCollected * 11;
+    const bitsFromExtra = hasExtra ? rBits : 0;
+    const totalCollected = bitsFromWords + bitsFromExtra;
+    // Target: entBits (the full entropy, not counting checksum)
+    const pct = Math.min(100, Math.round((totalCollected / entBits) * 100));
+    // Quality assessment
+    let quality, qualityClass, barColor;
+    if (totalCollected >= entBits) {
+        quality = 'Completa'; qualityClass = 'good'; barColor = '#238636';
+    } else if (totalCollected >= entBits * 0.5) {
+        quality = 'Parcial'; qualityClass = 'partial'; barColor = '#d29922';
+    } else {
+        quality = 'Insuficiente'; qualityClass = 'low'; barColor = '#da3633';
+    }
+    // Security level description
+    let secLevel, secClass;
+    if (totalWords === 24) { secLevel = '256 bits — muito forte'; secClass = 'good'; }
+    else if (totalWords === 18) { secLevel = '192 bits — forte'; secClass = 'good'; }
+    else { secLevel = '128 bits — padr&atilde;o'; secClass = 'partial'; }
+    const remaining = entBits - totalCollected;
+    const remainingWords = maxFree - wordsCollected;
+    el.innerHTML =
+        '<h3>Entropia</h3>' +
+        '<div class="entropy-bar"><div class="entropy-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></div>' +
+        '<div class="entropy-bar-text">' + totalCollected + ' / ' + entBits + ' bits (' + pct + '%)</div></div>' +
+        '<div class="entropy-stats">' +
+        '<div class="entropy-stat"><div class="stat-label">Coletados</div><div class="stat-value">' + totalCollected + ' bits</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">Meta</div><div class="stat-value">' + entBits + ' bits</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">Palavras</div><div class="stat-value">' + wordsCollected + '/' + maxFree + (hasExtra ? ' + extra' : '') + '</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">Qualidade</div><div class="stat-value ' + qualityClass + '">' + quality + '</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">N&iacute;vel de seguran&ccedil;a</div><div class="stat-value ' + secClass + '">' + secLevel + '</div></div>' +
+        (remaining > 0 ? '<div class="entropy-stat"><div class="stat-label">Faltam</div><div class="stat-value">' + remaining + ' bits (' + remainingWords + ' palavras' + (!hasExtra ? ' + extra' : '') + ')</div></div>' : '') +
+        '</div>';
 }
 
 function sendToFinalize() {
@@ -426,6 +486,7 @@ function updateWordInputs() {
             '<div class="suggestions" id="sugg' + i + '"></div>';
         container.appendChild(div);
     }
+    calcChecksum();
 }
 
 function wordChanged(input, idx) {
@@ -495,13 +556,26 @@ async function calcChecksum() {
     const resultDiv = document.getElementById('checksum-result');
     const phraseDiv = document.getElementById('full-phrase');
     
+    const hasExtra = !isNaN(extraIdx) && extraIdx >= 0 && extraIdx <= 2047;
+
+    // Count valid words in Finalizar tab
+    let validWordsCount = 0;
+    for (let i = 1; i <= n; i++) {
+        const input = document.getElementById('word' + i);
+        if (input) {
+            const val = input.value.toLowerCase().trim();
+            if (wlLower.indexOf(val) !== -1) validWordsCount++;
+        }
+    }
+    renderEntropy('entropy-finalizar', validWordsCount, total, hasExtra);
+
     if (!allValid || indices.length < n) {
         resultDiv.innerHTML = '<div class="result-box error"><div class="label">Preencha todas as ' + n + ' palavras corretamente</div></div>';
         phraseDiv.innerHTML = '';
         return;
     }
-    
-    if (isNaN(extraIdx) || extraIdx < 0 || extraIdx > 2047) {
+
+    if (!hasExtra) {
         resultDiv.innerHTML = '<div class="result-box error"><div class="label">Insira o &iacute;ndice N da consulta extra (0-2047)</div></div>';
         phraseDiv.innerHTML = '';
         return;

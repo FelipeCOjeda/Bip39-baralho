@@ -55,7 +55,9 @@ A última palavra da seed phrase não é 100% livre — ela carrega bits de chec
 | 18 | 192 bits | 6 bits | 5 |
 | 24 | 256 bits | 8 bits | 3 |
 
-Para calcular a última palavra, você precisará de uma ferramenta que compute SHA-256 sobre a entropia acumulada — idealmente em um dispositivo **offline**. A aba **Checksum** da planilha explica o processo em detalhe.
+Para calcular a última palavra, use o arquivo `bip39_baralho_offline.html` incluído neste repositório. Ele funciona 100% offline em qualquer navegador — basta salvar o arquivo e abrir sem internet. Ele usa a Web Crypto API (SHA-256 nativo do navegador) para calcular o checksum automaticamente.
+
+Funcionalidades do HTML offline: consulta de cartas (duas cartas → palavra), finalização da seed phrase (insira as N-1 palavras + consulta extra → última palavra calculada), validação de frase completa (verifica checksum), autocomplete de palavras e suporte a todos os 10 idiomas.
 
 ## Aviso de segurança
 

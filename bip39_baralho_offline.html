@@ -324,11 +324,11 @@ function doLookup() {
             ? '<button class="add-word-btn" disabled>Todas as ' + maxFree + ' palavras j&aacute; coletadas</button>'
             : '<button class="add-word-btn" onclick="addCollectedWord()">+ Marcar como palavra ' + (collectedWords.length + 1) + '</button>';
         div.innerHTML = '<div class="card-result valid-card">' +
-            '<strong>N = ' + r.n + '</strong> — Palavra: <strong style="font-size:1.2em">' + r.word + '</strong>' +
+            '<strong>Palavra #' + (r.n+1) + ':</strong> <strong style="font-size:1.2em">' + r.word + '</strong>' +
             '<br><span style="color:#8b949e">11 bits: ' + r.n.toString(2).padStart(11,'0') + '</span><br>' +
             addBtn + '</div>';
     } else {
-        div.innerHTML = '<div class="card-result discard"><strong>N = ' + r.n + '</strong> — DESCARTAR<br>Devolva as cartas, embaralhe e repita.</div>';
+        div.innerHTML = '<div class="card-result discard"><strong>N = ' + (r.n+1) + '</strong> — DESCARTAR<br>Devolva as cartas, embaralhe e repita.</div>';
     }
 }
 
@@ -462,11 +462,11 @@ function doExtraLookup() {
     const r = cardLookup(ai, bi, lang);
     if (r.valid) {
         document.getElementById('extraIndex').value = r.n;
-        div.innerHTML = '<div class="card-result valid-card">N = ' + r.n + ' (' + r.word + ') — &iacute;ndice preenchido automaticamente</div>';
+        div.innerHTML = '<div class="card-result valid-card">Palavra #' + (r.n+1) + ' (' + r.word + ') — &iacute;ndice preenchido automaticamente</div>';
         calcChecksum();
     } else {
         document.getElementById('extraIndex').value = '';
-        div.innerHTML = '<div class="card-result discard">N = ' + r.n + ' — DESCARTAR. Sorteie outro par.</div>';
+        div.innerHTML = '<div class="card-result discard">N = ' + (r.n+1) + ' — DESCARTAR. Sorteie outro par.</div>';
     }
 }
 

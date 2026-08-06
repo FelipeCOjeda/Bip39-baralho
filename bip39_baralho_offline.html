@@ -1,4 +1,4 @@
-<!-- v2.3 -->
+<!-- v2.4 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -425,23 +425,39 @@ function renderEntropy(targetId, words, totalWords, hasExtra) {
     let quality, qualityClass, barColor;
     let warnings = [];
 
-    if (uniqueCount === 1 && wordsCollected > 1) {
-        quality = 'Nula'; qualityClass = 'low'; barColor = '#da3633';
-        warnings.push('Todas as palavras s&atilde;o iguais — entropia m&iacute;nima');
-    } else if (uniqueCount < wordsCollected * 0.5) {
-        quality = 'Muito baixa'; qualityClass = 'low'; barColor = '#da3633';
-        warnings.push('Muitas palavras repetidas — inseguro');
-    } else if (uniqueCount < wordsCollected) {
-        quality = 'Reduzida'; qualityClass = 'partial'; barColor = '#d29922';
-        warnings.push('Palavras repetidas reduzem a entropia');
-    } else if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
-        quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
+    // Repetition rules:
+    // 12 words: no repeats allowed
+    // 18 words: max 1 word repeated once (tolerance)
+    // 24 words: max 1 word repeated once
+    const repeatedCount = wordsCollected - uniqueCount;
+    const repeatedWords = Object.values(freq).filter(f => f > 1).length; // how many distinct words are repeated
+
+    if (uniqueCount === wordsCollected) {
+        // All unique
+        if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
+            quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
+        } else {
+            quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
+        }
+    } else if (totalWords === 24 && repeatedWords === 1 && repeatedCount === 1) {
+        // 24-word: exactly 1 word appears twice, rest unique — acceptable
+        quality = 'Aceit&aacute;vel'; qualityClass = 'partial'; barColor = '#d29922';
+        warnings.push('1 palavra repetida — aceit&aacute;vel para carteira de 24 palavras');
     } else {
-        quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
+        quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
     }
 
-    if (uniqueCount < wordsCollected && uniqueCount > 1) {
-        warnings.push((wordsCollected - uniqueCount) + ' palavra(s) repetida(s)');
+    // Repetition alerts based on wallet size
+    if (totalWords === 12 && uniqueCount < wordsCollected) {
+        warnings.push('Carteira de 12 palavras: n&atilde;o pode repetir nenhuma palavra');
+    } else if (totalWords === 18 && uniqueCount < wordsCollected) {
+        if (repeatedWords > 1 || repeatedCount > 1) {
+            warnings.push('Carteira de 18 palavras: m&aacute;ximo 1 repeti&ccedil;&atilde;o de 1 palavra');
+        }
+    } else if (totalWords === 24 && uniqueCount < wordsCollected) {
+        if (repeatedWords > 1 || repeatedCount > 1) {
+            warnings.push('Carteira de 24 palavras: pode repetir apenas 1 palavra, apenas 1 vez');
+        }
     }
 
     const remainingWords = maxFree - wordsCollected;

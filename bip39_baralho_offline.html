@@ -1,4 +1,4 @@
-<!-- v2.6 -->
+<!-- v2.7 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -427,6 +427,10 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
     // Detect alphabetically sequential first letters (A,B,C... or similar)
     let hasAlphaSeq = false;
     let longestAlpha = 1;
+    // Detect repeated first letters (many words starting with same letter)
+    let hasRepeatedInitials = false;
+    let mostRepeatedInitial = '';
+    let mostRepeatedInitialCount = 0;
     if (wordsCollected >= 3) {
         const initials = words.map(w => w.toLowerCase().charCodeAt(0));
         let run = 1;
@@ -435,6 +439,15 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
             else { run = 1; }
         }
         if (longestAlpha >= 3) hasAlphaSeq = true;
+
+        // Count initial letter frequency
+        const initialFreq = {};
+        for (const w of words) { const c = w.toLowerCase().charAt(0); initialFreq[c] = (initialFreq[c] || 0) + 1; }
+        for (const [letter, count] of Object.entries(initialFreq)) {
+            if (count > mostRepeatedInitialCount) { mostRepeatedInitialCount = count; mostRepeatedInitial = letter.toUpperCase(); }
+        }
+        // Flag if more than 40% of words share the same initial
+        if (mostRepeatedInitialCount >= 3 && mostRepeatedInitialCount / wordsCollected > 0.4) hasRepeatedInitials = true;
     }
 
     // BIP39 effective entropy = unique words × 11 bits
@@ -470,7 +483,13 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
         quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
         warnings.push('Iniciais sequenciais detectadas (' + longestAlpha + ' letras consecutivas: ex. A,B,C…) — previs&iacute;vel');
     }
-    if (!hasSequence && !hasAlphaSeq) {
+    if (hasRepeatedInitials) {
+        if (!quality || qualityClass !== 'low') {
+            quality = 'Reduzida'; qualityClass = 'partial'; barColor = '#d29922';
+        }
+        warnings.push(mostRepeatedInitialCount + ' palavras come&ccedil;am com "' + mostRepeatedInitial + '" — iniciais pouco distribu&iacute;das');
+    }
+    if (!hasSequence && !hasAlphaSeq && !hasRepeatedInitials) {
         if (uniqueCount === wordsCollected) {
             if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
                 quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';

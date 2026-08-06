@@ -1,4 +1,4 @@
-<!-- v2.4 -->
+<!-- v2.5 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -377,7 +377,8 @@ function renderCollected() {
     container.innerHTML = html;
 
     // Entropy panel
-    renderEntropy('entropy-consulta', collectedWords, seedSize, false);
+    const lang1 = document.getElementById('lang1').value;
+    renderEntropy('entropy-consulta', collectedWords, seedSize, false, WORDLISTS[lang1]);
 
     if (collectedWords.length === maxFree) {
         actionsEl.innerHTML = '<button class="go-finalize" onclick="sendToFinalize()">Ir para Finalizar Seed &rarr;</button>' +
@@ -389,7 +390,7 @@ function renderCollected() {
     }
 }
 
-function renderEntropy(targetId, words, totalWords, hasExtra) {
+function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
     const el = document.getElementById(targetId);
     if (!el) return;
     const config = {12: [128,4,7], 18: [192,6,5], 24: [256,8,3]};
@@ -402,10 +403,26 @@ function renderEntropy(targetId, words, totalWords, hasExtra) {
         return;
     }
 
-    // Count unique words
-    const seen = new Set();
-    for (const w of words) seen.add(w.toLowerCase());
-    const uniqueCount = seen.size;
+    // Count unique words and frequencies
+    const freq = {};
+    for (const w of words) { const wl = w.toLowerCase(); freq[wl] = (freq[wl] || 0) + 1; }
+    const uniqueCount = Object.keys(freq).length;
+
+    // Detect sequential indices (3+ consecutive = sequence)
+    let hasSequence = false;
+    let longestSeq = 1;
+    if (wl && wordsCollected >= 3) {
+        const wlLower = wl.map(w => w.toLowerCase());
+        const indices = words.map(w => wlLower.indexOf(w.toLowerCase())).filter(i => i !== -1);
+        if (indices.length >= 3) {
+            let run = 1;
+            for (let i = 1; i < indices.length; i++) {
+                if (indices[i] === indices[i-1] + 1) { run++; if (run > longestSeq) longestSeq = run; }
+                else { run = 1; }
+            }
+            if (longestSeq >= 3) hasSequence = true;
+        }
+    }
 
     // BIP39 effective entropy = unique words × 11 bits
     // Each unique word from pool of 2048 (2^11) contributes 11 bits.
@@ -432,15 +449,17 @@ function renderEntropy(targetId, words, totalWords, hasExtra) {
     const repeatedCount = wordsCollected - uniqueCount;
     const repeatedWords = Object.values(freq).filter(f => f > 1).length; // how many distinct words are repeated
 
-    if (uniqueCount === wordsCollected) {
-        // All unique
+    if (hasSequence) {
+        quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
+        warnings.push('Sequ&ecirc;ncia detectada (' + longestSeq + ' palavras consecutivas na wordlist) — previs&iacute;vel');
+    } else if (uniqueCount === wordsCollected) {
+        // All unique, no sequence
         if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
             quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
         } else {
             quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
         }
     } else if (totalWords === 24 && repeatedWords === 1 && repeatedCount === 1) {
-        // 24-word: exactly 1 word appears twice, rest unique — acceptable
         quality = 'Aceit&aacute;vel'; qualityClass = 'partial'; barColor = '#d29922';
         warnings.push('1 palavra repetida — aceit&aacute;vel para carteira de 24 palavras');
     } else {
@@ -623,7 +642,7 @@ async function calcChecksum() {
             if (wlLower.indexOf(v) !== -1) validWordsList.push(v);
         }
     }
-    renderEntropy('entropy-finalizar', validWordsList, total, hasExtra);
+    renderEntropy('entropy-finalizar', validWordsList, total, hasExtra, wl);
 
     if (!allValid || indices.length < n) {
         resultDiv.innerHTML = '<div class="result-box error"><div class="label">Preencha todas as ' + n + ' palavras corretamente</div></div>';

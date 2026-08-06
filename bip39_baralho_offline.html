@@ -1,4 +1,4 @@
-<!-- v2.7 -->
+<!-- v3.0 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -408,46 +408,108 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
     for (const w of words) { const wl = w.toLowerCase(); freq[wl] = (freq[wl] || 0) + 1; }
     const uniqueCount = Object.keys(freq).length;
 
-    // Detect sequential indices (3+ consecutive = sequence)
-    let hasSequence = false;
-    let longestSeq = 1;
-    if (wl && wordsCollected >= 3) {
-        const wlLower = wl.map(w => w.toLowerCase());
-        const indices = words.map(w => wlLower.indexOf(w.toLowerCase())).filter(i => i !== -1);
-        if (indices.length >= 3) {
-            let run = 1;
-            for (let i = 1; i < indices.length; i++) {
-                if (indices[i] === indices[i-1] + 1) { run++; if (run > longestSeq) longestSeq = run; }
-                else { run = 1; }
-            }
-            if (longestSeq >= 3) hasSequence = true;
+    // === PATTERN DETECTION ===
+    const wlLower = wl ? wl.map(w => w.toLowerCase()) : [];
+    const indices = wl ? words.map(w => wlLower.indexOf(w.toLowerCase())).filter(i => i !== -1) : [];
+    const lowerWords = words.map(w => w.toLowerCase());
+
+    // 1) Sequential wordlist indices (abandon=0, ability=1, able=2...)
+    let hasSequence = false, longestSeq = 1;
+    if (indices.length >= 3) {
+        let run = 1;
+        for (let i = 1; i < indices.length; i++) {
+            if (indices[i] === indices[i-1] + 1) { run++; if (run > longestSeq) longestSeq = run; }
+            else { run = 1; }
         }
+        if (longestSeq >= 3) hasSequence = true;
     }
 
-    // Detect alphabetically sequential first letters (A,B,C... or similar)
-    let hasAlphaSeq = false;
-    let longestAlpha = 1;
-    // Detect repeated first letters (many words starting with same letter)
-    let hasRepeatedInitials = false;
-    let mostRepeatedInitial = '';
-    let mostRepeatedInitialCount = 0;
+    // 2) Alphabetically sequential first letters (A,B,C...)
+    let hasAlphaSeq = false, longestAlpha = 1;
     if (wordsCollected >= 3) {
-        const initials = words.map(w => w.toLowerCase().charCodeAt(0));
+        const initCodes = lowerWords.map(w => w.charCodeAt(0));
         let run = 1;
-        for (let i = 1; i < initials.length; i++) {
-            if (initials[i] === initials[i-1] + 1) { run++; if (run > longestAlpha) longestAlpha = run; }
+        for (let i = 1; i < initCodes.length; i++) {
+            if (initCodes[i] === initCodes[i-1] + 1) { run++; if (run > longestAlpha) longestAlpha = run; }
             else { run = 1; }
         }
         if (longestAlpha >= 3) hasAlphaSeq = true;
+    }
 
-        // Count initial letter frequency
+    // 3) Repeated first letters (>40% same initial)
+    let hasRepeatedInitials = false, mostRepeatedInitial = '', mostRepeatedInitialCount = 0;
+    if (wordsCollected >= 3) {
         const initialFreq = {};
-        for (const w of words) { const c = w.toLowerCase().charAt(0); initialFreq[c] = (initialFreq[c] || 0) + 1; }
+        for (const w of lowerWords) { const c = w.charAt(0); initialFreq[c] = (initialFreq[c] || 0) + 1; }
         for (const [letter, count] of Object.entries(initialFreq)) {
             if (count > mostRepeatedInitialCount) { mostRepeatedInitialCount = count; mostRepeatedInitial = letter.toUpperCase(); }
         }
-        // Flag if more than 40% of words share the same initial
         if (mostRepeatedInitialCount >= 3 && mostRepeatedInitialCount / wordsCollected > 0.4) hasRepeatedInitials = true;
+    }
+
+    // 4) Palindrome sequence (word list reads same forward and backward)
+    let isPalindrome = false;
+    if (wordsCollected >= 4) {
+        isPalindrome = true;
+        for (let i = 0; i < Math.floor(wordsCollected / 2); i++) {
+            if (lowerWords[i] !== lowerWords[wordsCollected - 1 - i]) { isPalindrome = false; break; }
+        }
+    }
+
+    // 5) Short words concentrated (>60% have 3-4 chars)
+    let hasShortConcentration = false, shortCount = 0;
+    for (const w of lowerWords) { if (w.length <= 4) shortCount++; }
+    if (wordsCollected >= 5 && shortCount / wordsCollected > 0.6) hasShortConcentration = true;
+
+    // 6) Indices concentrated in narrow range (<25% of wordlist span)
+    let hasNarrowRange = false, idxSpan = 0;
+    if (indices.length >= 3) {
+        const minIdx = Math.min(...indices);
+        const maxIdx = Math.max(...indices);
+        idxSpan = maxIdx - minIdx;
+        if (idxSpan < 2048 * 0.25) hasNarrowRange = true;
+    }
+
+    // 7) Rhythmic index patterns (even/odd alternation or constant step)
+    let hasRhythm = false, rhythmDesc = '';
+    if (indices.length >= 5) {
+        // Check constant step (e.g. 10, 20, 30...)
+        const steps = [];
+        for (let i = 1; i < indices.length; i++) steps.push(indices[i] - indices[i-1]);
+        const firstStep = steps[0];
+        if (firstStep !== 0 && steps.every(s => s === firstStep)) {
+            hasRhythm = true;
+            rhythmDesc = 'intervalo constante de ' + Math.abs(firstStep);
+        }
+        // Check even/odd alternation
+        if (!hasRhythm) {
+            const parities = indices.map(i => i % 2);
+            let alternates = true;
+            for (let i = 1; i < parities.length; i++) {
+                if (parities[i] === parities[i-1]) { alternates = false; break; }
+            }
+            if (alternates) { hasRhythm = true; rhythmDesc = 'altern&acirc;ncia par/&iacute;mpar constante'; }
+        }
+    }
+
+    // 8) Common/obvious words (brain wallet attack list)
+    const OBVIOUS = ['love','money','rich','gold','happy','lucky','dream','hope','life','free',
+        'peace','power','magic','angel','hero','king','queen','prince','master','secret',
+        'bitcoin','crypto','wallet','moon','diamond','silver','trust','faith','glory','heaven'];
+    let obviousCount = 0, obviousFound = [];
+    for (const w of lowerWords) {
+        if (OBVIOUS.indexOf(w) !== -1) { obviousCount++; if (obviousFound.indexOf(w) === -1) obviousFound.push(w); }
+    }
+    const hasObvious = obviousCount >= 3;
+
+    // 9) Anagrams (words that are letter-rearrangements of each other)
+    let hasAnagrams = false, anagramGroups = 0;
+    if (wordsCollected >= 3) {
+        const sorted = lowerWords.map(w => w.split('').sort().join(''));
+        const anagramFreq = {};
+        for (const s of sorted) anagramFreq[s] = (anagramFreq[s] || 0) + 1;
+        anagramGroups = Object.values(anagramFreq).filter(c => c > 1).length;
+        if (anagramGroups >= 2) hasAnagrams = true;
     }
 
     // BIP39 effective entropy = unique words × 11 bits
@@ -463,58 +525,51 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
     // Progress bar based on effective entropy vs target
     const pct = Math.min(100, Math.round((totalEffective / targetEntropy) * 100));
 
-    // Quality assessment based on ratio of effective vs theoretical max
-    const ratio = wordsCollected > 0 ? effectiveEntropy / maxEntropy : 0;
+    // === QUALITY ASSESSMENT ===
     let quality, qualityClass, barColor;
     let warnings = [];
-
-    // Repetition rules:
-    // 12 words: no repeats allowed
-    // 18 words: max 1 word repeated once (tolerance)
-    // 24 words: max 1 word repeated once
     const repeatedCount = wordsCollected - uniqueCount;
-    const repeatedWords = Object.values(freq).filter(f => f > 1).length; // how many distinct words are repeated
+    const repeatedWords = Object.values(freq).filter(f => f > 1).length;
 
-    if (hasSequence) {
-        quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
-        warnings.push('Sequ&ecirc;ncia detectada (' + longestSeq + ' palavras consecutivas na wordlist) — previs&iacute;vel');
-    }
-    if (hasAlphaSeq) {
-        quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
-        warnings.push('Iniciais sequenciais detectadas (' + longestAlpha + ' letras consecutivas: ex. A,B,C…) — previs&iacute;vel');
-    }
-    if (hasRepeatedInitials) {
-        if (!quality || qualityClass !== 'low') {
-            quality = 'Reduzida'; qualityClass = 'partial'; barColor = '#d29922';
-        }
-        warnings.push(mostRepeatedInitialCount + ' palavras come&ccedil;am com "' + mostRepeatedInitial + '" — iniciais pouco distribu&iacute;das');
-    }
-    if (!hasSequence && !hasAlphaSeq && !hasRepeatedInitials) {
-        if (uniqueCount === wordsCollected) {
-            if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
-                quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
-            } else {
-                quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
-            }
-        } else if (totalWords === 24 && repeatedWords === 1 && repeatedCount === 1) {
-            quality = 'Aceit&aacute;vel'; qualityClass = 'partial'; barColor = '#d29922';
-            warnings.push('1 palavra repetida — aceit&aacute;vel para carteira de 24 palavras');
-        } else if (!quality) {
-            quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
-        }
-    }
+    // Collect all issues — severity: 'high' (insegura) or 'medium' (reduzida)
+    // HIGH severity patterns
+    if (hasSequence) warnings.push({s:'high', t:'Sequ&ecirc;ncia de ' + longestSeq + ' palavras consecutivas na wordlist — previs&iacute;vel'});
+    if (hasAlphaSeq) warnings.push({s:'high', t:'Iniciais sequenciais (' + longestAlpha + ' letras: A,B,C…) — previs&iacute;vel'});
+    if (isPalindrome) warnings.push({s:'high', t:'Frase pal&iacute;ndroma (mesma sequ&ecirc;ncia ao contr&aacute;rio) — metade da entropia'});
+    if (hasRhythm) warnings.push({s:'high', t:'Padr&atilde;o r&iacute;tmico nos &iacute;ndices (' + rhythmDesc + ') — previs&iacute;vel'});
 
-    // Repetition alerts based on wallet size
+    // Repetition rules
     if (totalWords === 12 && uniqueCount < wordsCollected) {
-        warnings.push('Carteira de 12 palavras: n&atilde;o pode repetir nenhuma palavra');
-    } else if (totalWords === 18 && uniqueCount < wordsCollected) {
+        warnings.push({s:'high', t:'Carteira de 12 palavras: n&atilde;o pode repetir nenhuma palavra'});
+    } else if ((totalWords === 18 || totalWords === 24) && uniqueCount < wordsCollected) {
         if (repeatedWords > 1 || repeatedCount > 1) {
-            warnings.push('Carteira de 18 palavras: m&aacute;ximo 1 repeti&ccedil;&atilde;o de 1 palavra');
+            warnings.push({s:'high', t:'Carteira de ' + totalWords + ' palavras: pode repetir apenas 1 palavra, apenas 1 vez'});
+        } else {
+            warnings.push({s:'medium', t:'1 palavra repetida — aceit&aacute;vel para carteira de ' + totalWords + ' palavras'});
         }
-    } else if (totalWords === 24 && uniqueCount < wordsCollected) {
-        if (repeatedWords > 1 || repeatedCount > 1) {
-            warnings.push('Carteira de 24 palavras: pode repetir apenas 1 palavra, apenas 1 vez');
-        }
+    }
+
+    // MEDIUM severity patterns
+    if (hasRepeatedInitials) warnings.push({s:'medium', t:mostRepeatedInitialCount + ' palavras come&ccedil;am com "' + mostRepeatedInitial + '" — iniciais pouco distribu&iacute;das'});
+    if (hasShortConcentration) warnings.push({s:'medium', t:shortCount + '/' + wordsCollected + ' palavras com 3-4 letras — pool reduzido (poucas palavras curtas na wordlist)'});
+    if (hasNarrowRange) warnings.push({s:'medium', t:'&Iacute;ndices concentrados em faixa estreita (span=' + idxSpan + ' de 2048) — pouca dispers&atilde;o'});
+    if (hasObvious) warnings.push({s:'medium', t:obviousCount + ' palavras &oacute;bvias (' + obviousFound.join(', ') + ') — alvo de ataques de brain wallet'});
+    if (hasAnagrams) warnings.push({s:'medium', t:anagramGroups + ' grupo(s) de anagramas entre palavras — sugere escolha manual'});
+
+    // Determine overall quality
+    const highCount = warnings.filter(w => w.s === 'high').length;
+    const mediumCount = warnings.filter(w => w.s === 'medium').length;
+
+    if (highCount > 0) {
+        quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
+    } else if (mediumCount >= 3) {
+        quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
+    } else if (mediumCount > 0) {
+        quality = 'Reduzida'; qualityClass = 'partial'; barColor = '#d29922';
+    } else if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
+        quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
+    } else {
+        quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
     }
 
     const remainingWords = maxFree - wordsCollected;
@@ -532,7 +587,12 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
         '<div class="entropy-stat"><div class="stat-label">Qualidade</div><div class="stat-value ' + qualityClass + '">' + quality + '</div></div>' +
         (remainingWords > 0 ? '<div class="entropy-stat"><div class="stat-label">Faltam</div><div class="stat-value">' + remainingWords + ' palavras' + (!hasExtra ? ' + extra' : '') + '</div></div>' : '') +
         '</div>' +
-        (warnings.length > 0 ? '<div style="margin-top:8px;color:#f85149;font-size:0.85em">&#x26a0;&#xfe0f; ' + warnings.join(' | ') + '</div>' : '');
+        (warnings.length > 0 ? '<div style="margin-top:8px;font-size:0.85em">' +
+            warnings.map(function(w) {
+                var color = w.s === 'high' ? '#f85149' : '#d29922';
+                var icon = w.s === 'high' ? '&#x1f6a8;' : '&#x26a0;&#xfe0f;';
+                return '<div style="color:' + color + ';margin:2px 0">' + icon + ' ' + w.t + '</div>';
+            }).join('') + '</div>' : '');
 }
 
 function sendToFinalize() {

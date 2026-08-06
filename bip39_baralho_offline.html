@@ -1,4 +1,4 @@
-<!-- v2.5 -->
+<!-- v2.6 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -424,6 +424,19 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
         }
     }
 
+    // Detect alphabetically sequential first letters (A,B,C... or similar)
+    let hasAlphaSeq = false;
+    let longestAlpha = 1;
+    if (wordsCollected >= 3) {
+        const initials = words.map(w => w.toLowerCase().charCodeAt(0));
+        let run = 1;
+        for (let i = 1; i < initials.length; i++) {
+            if (initials[i] === initials[i-1] + 1) { run++; if (run > longestAlpha) longestAlpha = run; }
+            else { run = 1; }
+        }
+        if (longestAlpha >= 3) hasAlphaSeq = true;
+    }
+
     // BIP39 effective entropy = unique words × 11 bits
     // Each unique word from pool of 2048 (2^11) contributes 11 bits.
     // Repeated words add 0 — attacker who knows one instance knows all.
@@ -452,18 +465,24 @@ function renderEntropy(targetId, words, totalWords, hasExtra, wl) {
     if (hasSequence) {
         quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
         warnings.push('Sequ&ecirc;ncia detectada (' + longestSeq + ' palavras consecutivas na wordlist) — previs&iacute;vel');
-    } else if (uniqueCount === wordsCollected) {
-        // All unique, no sequence
-        if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
-            quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
-        } else {
-            quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
-        }
-    } else if (totalWords === 24 && repeatedWords === 1 && repeatedCount === 1) {
-        quality = 'Aceit&aacute;vel'; qualityClass = 'partial'; barColor = '#d29922';
-        warnings.push('1 palavra repetida — aceit&aacute;vel para carteira de 24 palavras');
-    } else {
+    }
+    if (hasAlphaSeq) {
         quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
+        warnings.push('Iniciais sequenciais detectadas (' + longestAlpha + ' letras consecutivas: ex. A,B,C…) — previs&iacute;vel');
+    }
+    if (!hasSequence && !hasAlphaSeq) {
+        if (uniqueCount === wordsCollected) {
+            if (wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
+                quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
+            } else {
+                quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
+            }
+        } else if (totalWords === 24 && repeatedWords === 1 && repeatedCount === 1) {
+            quality = 'Aceit&aacute;vel'; qualityClass = 'partial'; barColor = '#d29922';
+            warnings.push('1 palavra repetida — aceit&aacute;vel para carteira de 24 palavras');
+        } else if (!quality) {
+            quality = 'Insegura'; qualityClass = 'low'; barColor = '#da3633';
+        }
     }
 
     // Repetition alerts based on wallet size

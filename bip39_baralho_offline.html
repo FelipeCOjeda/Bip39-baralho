@@ -376,7 +376,7 @@ function renderCollected() {
     container.innerHTML = html;
 
     // Entropy panel
-    renderEntropy('entropy-consulta', collectedWords.length, seedSize, false);
+    renderEntropy('entropy-consulta', collectedWords, seedSize, false);
 
     if (collectedWords.length === maxFree) {
         actionsEl.innerHTML = '<button class="go-finalize" onclick="sendToFinalize()">Ir para Finalizar Seed &rarr;</button>' +
@@ -388,46 +388,86 @@ function renderCollected() {
     }
 }
 
-function renderEntropy(targetId, wordsCollected, totalWords, hasExtra) {
+function renderEntropy(targetId, words, totalWords, hasExtra) {
     const el = document.getElementById(targetId);
     if (!el) return;
     const config = {12: [128,4,7], 18: [192,6,5], 24: [256,8,3]};
     const [entBits, csBits, rBits] = config[totalWords];
     const maxFree = totalWords - 1;
-    // Each word contributes 11 bits of entropy from the card draw
-    const bitsFromWords = wordsCollected * 11;
-    const bitsFromExtra = hasExtra ? rBits : 0;
-    const totalCollected = bitsFromWords + bitsFromExtra;
-    // Target: entBits (the full entropy, not counting checksum)
-    const pct = Math.min(100, Math.round((totalCollected / entBits) * 100));
-    // Quality assessment
-    let quality, qualityClass, barColor;
-    if (totalCollected >= entBits) {
-        quality = 'Completa'; qualityClass = 'good'; barColor = '#238636';
-    } else if (totalCollected >= entBits * 0.5) {
-        quality = 'Parcial'; qualityClass = 'partial'; barColor = '#d29922';
-    } else {
-        quality = 'Insuficiente'; qualityClass = 'low'; barColor = '#da3633';
+    const wordsCollected = words.length;
+
+    if (wordsCollected === 0) {
+        el.innerHTML = '<h3>Entropia</h3><p class="info">Nenhuma palavra coletada ainda.</p>';
+        return;
     }
-    // Security level description
-    let secLevel, secClass;
-    if (totalWords === 24) { secLevel = '256 bits — muito forte'; secClass = 'good'; }
-    else if (totalWords === 18) { secLevel = '192 bits — forte'; secClass = 'good'; }
-    else { secLevel = '128 bits — padr&atilde;o'; secClass = 'partial'; }
-    const remaining = entBits - totalCollected;
+
+    // Shannon entropy: measures actual randomness of the chosen words
+    // Each unique word from 2048 possibilities contributes up to 11 bits
+    // Repeated words reduce entropy drastically
+    const freq = {};
+    for (const w of words) {
+        const wl = w.toLowerCase();
+        freq[wl] = (freq[wl] || 0) + 1;
+    }
+    const uniqueCount = Object.keys(freq).length;
+    // Shannon entropy per symbol (in bits)
+    let shannonPerSymbol = 0;
+    for (const f of Object.values(freq)) {
+        const p = f / wordsCollected;
+        shannonPerSymbol -= p * Math.log2(p);
+    }
+    // Effective entropy = Shannon per symbol × number of words
+    // This measures how many bits of real randomness are in the selection
+    const effectiveEntropy = Math.round(shannonPerSymbol * wordsCollected * 100) / 100;
+    // Maximum possible entropy for this many words = wordsCollected × 11
+    const maxEntropy = wordsCollected * 11;
+    // Extra bits
+    const bitsFromExtra = hasExtra ? rBits : 0;
+    const totalEffective = Math.round((effectiveEntropy + bitsFromExtra) * 100) / 100;
+    // Target
+    const targetEntropy = entBits;
+    // Progress bar based on effective entropy vs target
+    const pct = Math.min(100, Math.round((totalEffective / targetEntropy) * 100));
+
+    // Quality assessment based on ratio of effective vs theoretical max
+    const ratio = wordsCollected > 0 ? effectiveEntropy / maxEntropy : 0;
+    let quality, qualityClass, barColor;
+    let warnings = [];
+
+    if (uniqueCount === 1 && wordsCollected > 1) {
+        quality = 'Nula'; qualityClass = 'low'; barColor = '#da3633';
+        warnings.push('Todas as palavras s&atilde;o iguais — entropia zero');
+    } else if (ratio < 0.5) {
+        quality = 'Muito baixa'; qualityClass = 'low'; barColor = '#da3633';
+        warnings.push('Muitas palavras repetidas — inseguro');
+    } else if (ratio < 0.85) {
+        quality = 'Baixa'; qualityClass = 'partial'; barColor = '#d29922';
+        warnings.push('Palavras repetidas reduzem a entropia');
+    } else if (ratio >= 0.99 && wordsCollected === maxFree && totalEffective >= targetEntropy * 0.9) {
+        quality = 'Excelente'; qualityClass = 'good'; barColor = '#238636';
+    } else if (ratio >= 0.85) {
+        quality = 'Boa'; qualityClass = 'good'; barColor = '#238636';
+    }
+
+    if (uniqueCount < wordsCollected && uniqueCount > 1) {
+        warnings.push((wordsCollected - uniqueCount) + ' palavra(s) repetida(s)');
+    }
+
     const remainingWords = maxFree - wordsCollected;
+
     el.innerHTML =
         '<h3>Entropia</h3>' +
         '<div class="entropy-bar"><div class="entropy-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></div>' +
-        '<div class="entropy-bar-text">' + totalCollected + ' / ' + entBits + ' bits (' + pct + '%)</div></div>' +
+        '<div class="entropy-bar-text">' + totalEffective.toFixed(1) + ' / ' + targetEntropy + ' bits (' + pct + '%)</div></div>' +
         '<div class="entropy-stats">' +
-        '<div class="entropy-stat"><div class="stat-label">Coletados</div><div class="stat-value">' + totalCollected + ' bits</div></div>' +
-        '<div class="entropy-stat"><div class="stat-label">Meta</div><div class="stat-value">' + entBits + ' bits</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">Entropia efetiva</div><div class="stat-value ' + qualityClass + '">' + totalEffective.toFixed(1) + ' bits</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">Meta</div><div class="stat-value">' + targetEntropy + ' bits</div></div>' +
         '<div class="entropy-stat"><div class="stat-label">Palavras</div><div class="stat-value">' + wordsCollected + '/' + maxFree + (hasExtra ? ' + extra' : '') + '</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">&Uacute;nicas</div><div class="stat-value ' + (uniqueCount < wordsCollected ? 'partial' : 'good') + '">' + uniqueCount + '/' + wordsCollected + '</div></div>' +
         '<div class="entropy-stat"><div class="stat-label">Qualidade</div><div class="stat-value ' + qualityClass + '">' + quality + '</div></div>' +
-        '<div class="entropy-stat"><div class="stat-label">N&iacute;vel de seguran&ccedil;a</div><div class="stat-value ' + secClass + '">' + secLevel + '</div></div>' +
-        (remaining > 0 ? '<div class="entropy-stat"><div class="stat-label">Faltam</div><div class="stat-value">' + remaining + ' bits (' + remainingWords + ' palavras' + (!hasExtra ? ' + extra' : '') + ')</div></div>' : '') +
-        '</div>';
+        (remainingWords > 0 ? '<div class="entropy-stat"><div class="stat-label">Faltam</div><div class="stat-value">' + remainingWords + ' palavras' + (!hasExtra ? ' + extra' : '') + '</div></div>' : '') +
+        '</div>' +
+        (warnings.length > 0 ? '<div style="margin-top:8px;color:#f85149;font-size:0.85em">&#x26a0;&#xfe0f; ' + warnings.join(' | ') + '</div>' : '');
 }
 
 function sendToFinalize() {
@@ -567,7 +607,15 @@ async function calcChecksum() {
             if (wlLower.indexOf(val) !== -1) validWordsCount++;
         }
     }
-    renderEntropy('entropy-finalizar', validWordsCount, total, hasExtra);
+    const validWordsList = [];
+    for (let i = 1; i <= n; i++) {
+        const inp = document.getElementById('word' + i);
+        if (inp) {
+            const v = inp.value.toLowerCase().trim();
+            if (wlLower.indexOf(v) !== -1) validWordsList.push(v);
+        }
+    }
+    renderEntropy('entropy-finalizar', validWordsList, total, hasExtra);
 
     if (!allValid || indices.length < n) {
         resultDiv.innerHTML = '<div class="result-box error"><div class="label">Preencha todas as ' + n + ' palavras corretamente</div></div>';

@@ -1,4 +1,4 @@
-<!-- v2.2 -->
+<!-- v2.3 -->
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -403,24 +403,15 @@ function renderEntropy(targetId, words, totalWords, hasExtra) {
     }
 
     // Count unique words
-    const freq = {};
-    for (const w of words) { const wl = w.toLowerCase(); freq[wl] = (freq[wl] || 0) + 1; }
-    const uniqueCount = Object.keys(freq).length;
+    const seen = new Set();
+    for (const w of words) seen.add(w.toLowerCase());
+    const uniqueCount = seen.size;
 
-    // METRIC 1: BIP39 effective entropy = unique words × 11 bits
+    // BIP39 effective entropy = unique words × 11 bits
     // Each unique word from pool of 2048 (2^11) contributes 11 bits.
     // Repeated words add 0 — attacker who knows one instance knows all.
     const effectiveEntropy = uniqueCount * 11;
     const maxEntropy = wordsCollected * 11;
-
-    // METRIC 2: Shannon entropy of the sample distribution (H)
-    // Measures how uniform/diverse the word distribution is.
-    let shannonPerSymbol = 0;
-    for (const f of Object.values(freq)) {
-        const p = f / wordsCollected;
-        if (p > 0) shannonPerSymbol -= p * Math.log2(p);
-    }
-    const shannonTotal = Math.round(shannonPerSymbol * wordsCollected * 100) / 100;
     // Extra bits
     const bitsFromExtra = hasExtra ? rBits : 0;
     const totalEffective = Math.round((effectiveEntropy + bitsFromExtra) * 100) / 100;
@@ -461,7 +452,7 @@ function renderEntropy(targetId, words, totalWords, hasExtra) {
         '<div class="entropy-bar-text">' + totalEffective.toFixed(1) + ' / ' + targetEntropy + ' bits (' + pct + '%)</div></div>' +
         '<div class="entropy-stats">' +
         '<div class="entropy-stat"><div class="stat-label">Entropia efetiva</div><div class="stat-value ' + qualityClass + '">' + totalEffective.toFixed(1) + ' bits (' + uniqueCount + '&times;11)</div></div>' +
-        '<div class="entropy-stat"><div class="stat-label">Shannon (H)</div><div class="stat-value">' + shannonTotal.toFixed(1) + ' bits</div></div>' +
+        '<div class="entropy-stat"><div class="stat-label">Entropia m&aacute;xima</div><div class="stat-value">' + maxEntropy + ' bits (' + wordsCollected + '&times;11)</div></div>' +
         '<div class="entropy-stat"><div class="stat-label">Meta</div><div class="stat-value">' + targetEntropy + ' bits</div></div>' +
         '<div class="entropy-stat"><div class="stat-label">Palavras</div><div class="stat-value">' + wordsCollected + '/' + maxFree + (hasExtra ? ' + extra' : '') + '</div></div>' +
         '<div class="entropy-stat"><div class="stat-label">&Uacute;nicas</div><div class="stat-value ' + (uniqueCount < wordsCollected ? 'partial' : 'good') + '">' + uniqueCount + '/' + wordsCollected + '</div></div>' +
